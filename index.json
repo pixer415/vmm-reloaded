@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "updated_at": "2026-09-05T20:09:50Z",
+  "app_count": 1,
+  "base_url": "https://pixer415.github.io/vmm-reloaded",
+  "apps": [
+    {
+      "id": "io.github.pixer415.virt-manager-reloaded",
+      "title": "VMM Reloaded",
+      "tagline": "virt-manager with its own hypervisor, and guest GPU acceleration",
+      "category": "Developer",
+      "categories": [
+        "developer"
+      ],
+      "author": "pixer415",
+      "developer": "pixer415",
+      "architectures": [
+        "amd64"
+      ],
+      "icon": "/apps/io.github.pixer415.virt-manager-reloaded/assets/icon.svg",
+      "thumbnail": "",
+      "compose_url": "/apps/io.github.pixer415.virt-manager-reloaded/docker-compose.yml",
+      "meta_url": "/apps/io.github.pixer415.virt-manager-reloaded/meta.json",
+      "content_hash": "5b6aa120",
+      "version": "1.0.0"
+    }
+  ]
+}

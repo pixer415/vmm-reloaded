@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "store_id": "io.github.pixer415.vmm-reloaded",
+  "name": "VMM Reloaded",
+  "description": "A virt-manager app for ZimaOS that brings its own hypervisor, so guests can use the box's GPU.",
+  "maintainer": "pixer415",
+  "url": "https://github.com/pixer415/vmm-reloaded"
+}
