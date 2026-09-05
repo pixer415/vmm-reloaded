@@ -68,6 +68,26 @@ RUN if ! nginx -V 2>&1 | grep -q -- '--with-http_sub_module'; then \
 
 RUN apt-get install -y --no-install-recommends virt-manager dbus-x11 libglib2.0-bin gir1.2-spiceclientgtk-3.0 ssh at-spi2-core
 
+# GTK's icon and MIME plumbing. --no-install-recommends leaves these out, and
+# without them virt-manager starts but logs "Could not load a pixbuf from icon
+# theme" and renders without icons: Papirus ships SVG, which needs the librsvg
+# pixbuf loader, and GTK wants a MIME database and a fallback icon theme.
+RUN apt-get install -y --no-install-recommends \
+      librsvg2-common \
+      shared-mime-info \
+      libgdk-pixbuf2.0-bin \
+      adwaita-icon-theme \
+      hicolor-icon-theme
+
+# The package triggers normally rebuild these; do it explicitly in case a
+# trigger was skipped, but never fail the build over a cache refresh.
+RUN update-mime-database /usr/share/mime || true; \
+    gdk-pixbuf-query-loaders --update-cache || true; \
+    gtk-update-icon-cache -f /usr/share/icons/hicolor || true
+
+# A person who opens the terminal tile expects a shell that can do something.
+RUN apt-get install -y --no-install-recommends iputils-ping less nano curl
+
 # QEMU plus the two module packages that carry virtio-vga-gl and ui-egl-headless,
 # which is what libvirt probes for before it accepts <acceleration accel3d='yes'/>.
 RUN apt-get install -y --no-install-recommends \

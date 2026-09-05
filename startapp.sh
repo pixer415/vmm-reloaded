@@ -57,6 +57,23 @@ fi
 dbus-launch gsettings set org.virt-manager.virt-manager.connections uris "$HOSTS"
 dbus-launch gsettings set org.virt-manager.virt-manager.connections autoconnect "$HOSTS"
 dbus-launch gsettings set org.virt-manager.virt-manager xmleditor-enabled true
-tmux send-keys -t ttyd dbus-launch\ virt-manager\ --no-fork Enter
+
+# virt-manager runs in the foreground of the tmux session that ttyd shows, so
+# that its SSH password prompts are reachable from the terminal tile. That also
+# means window 0 is not a usable shell: anything typed there goes to
+# virt-manager's stdin and looks like a terminal with no prompt. Give the tile a
+# second window that really is a shell, and turn the status bar on so both are
+# visible and switchable.
+tmux send-keys -t ttyd:0 dbus-launch\ virt-manager\ --no-fork Enter
+tmux rename-window -t ttyd:0 virt-manager
+tmux new-window -t ttyd: -n shell
+tmux set -t ttyd -g status on
+tmux set -t ttyd -g mouse on
+# Flag the virt-manager window when it wants attention, e.g. a password prompt.
+tmux set -t ttyd -g monitor-activity on
+tmux set -t ttyd -g visual-activity off
+# Open on the shell: that is what someone clicking a terminal icon is after.
+tmux select-window -t ttyd:shell
+
 trap 'exit 0' SIGTERM
 while true; do sleep 1; done

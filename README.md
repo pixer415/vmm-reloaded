@@ -105,7 +105,10 @@ in a VNC framebuffer, drawn by gtk-vnc through Cairo, shipped to the browser by 
 GPU only changes what QEMU does *before* the framebuffer is filled. Nothing about viewing
 changes, which is exactly why this arrangement works here and SPICE's `gl=on` does not.
 
-From the terminal icon at the bottom left of the web UI:
+The terminal icon at the bottom left of the web UI opens a tmux session with two
+windows: `shell`, a normal root prompt, in front, and `virt-manager` behind it holding
+the program's own output and any SSH password prompt. Switch by clicking the names in
+the status bar, or Ctrl+B then 0 / 1. From the `shell` window:
 
 ```bash
 virt-3d enable my-vm

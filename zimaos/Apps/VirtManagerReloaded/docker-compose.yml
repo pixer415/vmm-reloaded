@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.1
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.2
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -74,7 +74,7 @@ x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
   store_app_id: virt-manager-reloaded
-  version: 1.0.1
+  version: 1.0.2
   author: pixer415
   developer: pixer415
   category: Developer
@@ -108,8 +108,14 @@ x-casaos:
       deliberate: it is what lets the app ship a QEMU with GPU support on a
       system whose own QEMU may not have it.
 
+      **The terminal tile has two windows.** The icon at the bottom left opens
+      a tmux session with `shell` in front - a normal root prompt - and
+      `virt-manager` behind it, carrying the program's own output and any SSH
+      password prompt it needs to ask you. Click either name in the bar at the
+      bottom to switch, or press Ctrl+B then 0 or 1.
+
       **Turning on 3D for a guest.** Create the VM as usual, then open the
-      terminal icon at the bottom left of the app and run:
+      terminal and run, at the `shell` window:
 
       ```
       virt-3d enable my-vm
@@ -140,4 +146,5 @@ x-casaos:
 
         **After installing,** open the tile, create a VM, then run
         `virt-3d enable <vm-name>` from the terminal icon at the bottom left to
-        turn on GPU rendering. Full notes are in the app description.
+        turn on GPU rendering. That terminal opens on a `shell` window; the
+        `virt-manager` window beside it carries the program's own output.
