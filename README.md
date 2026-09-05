@@ -38,6 +38,7 @@ so the "3D acceleration" checkbox is backed by a QEMU that actually has the GL d
 
 | | |
 |---|---|
+| Ubuntu 24.04 base | the published `mber5/broadway-baseimage` is still Ubuntu 20.04 from January 2022, which has neither `qemu-system-modules-opengl` nor `swtpm`, and a QEMU (4.2) far too old for this. The Broadway glue is copied out of it and everything else is rebuilt on 24.04 |
 | `qemu-system-modules-opengl` | supplies `virtio-vga-gl`, `virtio-gpu-gl` and `ui-egl-headless.so` - the exact things libvirt probes for before it accepts `<acceleration accel3d='yes'/>` |
 | `qemu-system-modules-spice` | SPICE with GL, for the "OpenGL" checkbox |
 | `libvirglrenderer1`, Mesa EGL/GBM/DRI | host-side renderer; without it QEMU has the `-gl` devices but dies with `egl: render node init failed` |

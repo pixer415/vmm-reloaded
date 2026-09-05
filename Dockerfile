@@ -1,4 +1,24 @@
-FROM mber5/broadway-baseimage:latest
+# syntax=docker/dockerfile:1
+
+# mber5/broadway-baseimage:latest was built FROM ubuntu:latest back when that
+# still meant 20.04, and the published image was never rebuilt. Focal has no
+# qemu-system-modules-opengl, no swtpm, and a QEMU (4.2) far too old for the
+# virgl work this fork exists to do.
+#
+# So: lift the Broadway glue out of that image - the nginx template, the start
+# script, the ttyd binary - and rebuild everything else on a release that has
+# the GL stack. Pinned to 24.04 rather than :latest so this cannot rot again.
+
+FROM mber5/broadway-baseimage:latest AS broadway
+
+FROM ubuntu:24.04
+
+# Carried over from the base image, which no longer sets them for us.
+ENV GDK_BACKEND='broadway'
+ENV BROADWAY_DISPLAY=':5'
+ENV GTK_THEME='Materia'
+ENV BG_GRADIENT="#ddd, #999"
+ENV DARK_MODE='false'
 
 ENV FAVICON_URL='https://raw.githubusercontent.com/virt-manager/virt-manager/931936a328d22413bb663e0e21d2f7bb111dbd7c/data/icons/256x256/apps/virt-manager.png'
 ENV APP_TITLE='Virtual Machine Manager'
@@ -24,6 +44,27 @@ ARG DEBCONF_NONINTERACTIVE_SEEN="true"
 RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d
 
 RUN apt-get update
+
+# The Broadway runtime the base image used to provide. libgtk-3-bin brings both
+# broadwayd and the GTK library, which is named libgtk-3-0t64 on 24.04 and may
+# be renamed again; depending on the -bin package avoids chasing that.
+RUN apt-get install -y --no-install-recommends \
+      libgtk-3-bin \
+      nginx \
+      gettext-base \
+      tmux \
+      procps \
+      materia-gtk-theme \
+      papirus-icon-theme
+
+# The Broadway page template rewrites the served HTML with sub_filter, which
+# exists only if nginx was built --with-http_sub_module. Ubuntu's nginx-core
+# normally is; fall back to nginx-extras rather than ship a silently broken UI,
+# and fail the build outright if neither has it.
+RUN if ! nginx -V 2>&1 | grep -q -- '--with-http_sub_module'; then \
+      apt-get install -y --no-install-recommends nginx-extras; \
+    fi \
+ && nginx -V 2>&1 | grep -q -- '--with-http_sub_module'
 
 RUN apt-get install -y --no-install-recommends virt-manager dbus-x11 libglib2.0-bin gir1.2-spiceclientgtk-3.0 ssh at-spi2-core
 
@@ -70,13 +111,28 @@ RUN apt-get install -y --no-install-recommends mesa-utils-bin vulkan-tools || tr
 
 RUN apt-get clean && apt-get autoclean && rm -rf /var/lib/apt/lists/* && rm -f /usr/sbin/policy-rc.d
 
+# The Broadway web front end: nginx page template, startup script, terminal icon,
+# and the ttyd binary (statically linked, so the older build still runs here).
+COPY --from=broadway /usr/local/bin/start /usr/local/bin/start
+COPY --from=broadway /etc/nginx/nginx.tmpl /etc/nginx/nginx.tmpl
+COPY --from=broadway /www/data/images/terminal-outline.svg /www/data/images/terminal-outline.svg
+COPY --from=broadway /usr/bin/ttyd /usr/bin/ttyd
+RUN chmod 755 /usr/local/bin/start /usr/bin/ttyd
+
+# The base image shipped the light Materia variant under the plain name; keep
+# that, but do not fail if the packaging ever drops the variant.
+RUN if [ -d /usr/share/themes/Materia-light ]; then \
+      rm -rf /usr/share/themes/Materia && \
+      mv /usr/share/themes/Materia-light /usr/share/themes/Materia; \
+    fi
+
 # Keep a pristine copy of libvirt's config tree. A bind-mounted /etc/libvirt/qemu
 # (what ZimaOS and most NAS front-ends use) arrives empty, and startapp restores
 # the default network and any missing pieces from here.
 RUN mkdir -p /usr/local/share/virt-reloaded && cp -a /etc/libvirt/qemu /usr/local/share/virt-reloaded/qemu-skel
 
 RUN mkdir -p /root/.ssh
-RUN echo "Host *\n\tStrictHostKeyChecking no\n" >> /root/.ssh/config
+RUN printf 'Host *\n\tStrictHostKeyChecking no\n' >> /root/.ssh/config
 
 COPY src/ /usr/local/lib/virt-reloaded/
 COPY startapp.sh /usr/local/bin/startapp
@@ -86,5 +142,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/startapp /usr/local/lib/virt-reloaded/* \
  && chmod 755 /usr/local/bin/startapp /usr/local/lib/virt-reloaded/* \
  && ln -sf /usr/local/lib/virt-reloaded/virt-3d /usr/local/bin/virt-3d \
  && ln -sf /usr/local/lib/virt-reloaded/virt-gpu-check /usr/local/bin/virt-gpu-check
+
+EXPOSE 80
 
 CMD ["/usr/local/bin/startapp"]

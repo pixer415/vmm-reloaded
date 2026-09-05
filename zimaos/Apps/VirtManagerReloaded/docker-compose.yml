@@ -6,10 +6,9 @@
 # box whose host QEMU has no GL support. The trade-off is that VMs created here
 # do not appear on ZimaOS's own Virtual Machine page.
 #
-# BEFORE PUBLISHING, replace the pixer415 and vmm-reloaded placeholders with your GitHub
-# username and repository name. ZimaOS installs from a registry and cannot build
-# from source; .github/workflows/publish-image.yml builds and pushes the image
-# for you on every push to main.
+# ZimaOS installs from a registry and cannot build from source;
+# .github/workflows/publish-image.yml builds and pushes the image on every push
+# to main, and tags it with the version below when you push a matching git tag.
 #
 # No dollar sign appears in this file on purpose: ZimaOS reduces the compose
 # escape form when it saves, and docker compose then substitutes empty string.
@@ -18,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.0
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.1
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -75,7 +74,7 @@ x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
   store_app_id: virt-manager-reloaded
-  version: 1.0.0
+  version: 1.0.1
   author: pixer415
   developer: pixer415
   category: Developer
