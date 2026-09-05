@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Report whether every piece the "3D acceleration" / "OpenGL" checkboxes depend
+# on is actually present. Run it from the terminal icon in the web UI when a
+# guest refuses to boot, so you can tell which layer is missing.
+
+QEMU="${QEMU:-qemu-system-x86_64}"
+URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
+
+ok()   { printf '  \033[32mok\033[0m    %s\n' "$*"; }
+bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$*"; }
+note() { printf '        %s\n' "$*"; }
+
+echo
+echo "DRM render node"
+if [ ! -d /dev/dri ]; then
+  bad "/dev/dri is missing"
+  note "add '- /dev/dri' to the devices section of your compose file"
+else
+  found=0
+  for node in /dev/dri/renderD*; do
+    [ -c "$node" ] || continue
+    found=1
+    name="${node##*/}"
+    vendor="$(cat "/sys/class/drm/$name/device/vendor" 2>/dev/null || echo unknown)"
+    if { exec {fd}<>"$node"; } 2>/dev/null; then
+      { exec {fd}>&-; } 2>/dev/null
+      ok "$node is readable (PCI vendor $vendor)"
+    else
+      bad "$node exists but cannot be opened (permissions)"
+    fi
+  done
+  [ "$found" = 1 ] || bad "/dev/dri holds no renderD* node"
+fi
+[ -r /run/virt-reloaded/rendernode ] && note "selected: $(cat /run/virt-reloaded/rendernode)"
+
+echo
+echo "QEMU"
+if ! command -v "$QEMU" >/dev/null 2>&1; then
+  bad "$QEMU is not installed"
+else
+  ok "$("$QEMU" --version | head -1)"
+  if "$QEMU" -device help 2>&1 | grep -q "virtio-vga-gl"; then
+    ok "virtio-vga-gl device present (qemu-system-modules-opengl)"
+  else
+    bad "virtio-vga-gl is missing - install qemu-system-modules-opengl"
+  fi
+  if "$QEMU" -display help 2>&1 | grep -q "egl-headless"; then
+    ok "egl-headless display present"
+  else
+    bad "egl-headless is missing - install qemu-system-modules-opengl"
+  fi
+  if "$QEMU" -spice help >/dev/null 2>&1 || "$QEMU" -device help 2>&1 | grep -q "spice"; then
+    ok "SPICE support present"
+  else
+    note "SPICE support not detected - install qemu-system-modules-spice"
+  fi
+fi
+
+echo
+echo "Host GL stack"
+for lib in libvirglrenderer.so.1 libEGL.so.1 libgbm.so.1; do
+  if ldconfig -p 2>/dev/null | grep -q "$lib"; then
+    ok "$lib"
+  else
+    bad "$lib is missing"
+  fi
+done
+if command -v eglinfo >/dev/null 2>&1; then
+  renderer="$(eglinfo -B 2>/dev/null | grep -m1 -i "OpenGL renderer" | cut -d: -f2- | sed 's/^ *//')"
+  [ -n "$renderer" ] && ok "EGL renderer: $renderer" || note "eglinfo produced no renderer string"
+fi
+
+echo
+echo "libvirt"
+if ! command -v virsh >/dev/null 2>&1; then
+  bad "virsh is not installed"
+elif ! virsh -c "$URI" version >/dev/null 2>&1; then
+  bad "cannot connect to $URI"
+  note "set LIBVIRTD=Y, or check the socket bind mount in your compose file"
+else
+  ok "connected to $URI"
+  caps="$(virsh -c "$URI" domcapabilities 2>/dev/null)"
+  if grep -q "virtio" <<< "$(sed -n '/<video/,/<\/video>/p' <<< "$caps")"; then
+    ok "libvirt reports a virtio video model"
+  else
+    bad "libvirt does not report a virtio video model"
+  fi
+  if grep -q "cgroup_device_acl" /etc/libvirt/qemu.conf 2>/dev/null; then
+    ok "qemu.conf carries a cgroup_device_acl"
+    note "$(grep -m1 'cgroup_device_acl' -A1 /etc/libvirt/qemu.conf | tr -d '\n' | cut -c1-160)"
+  else
+    note "qemu.conf has no explicit cgroup_device_acl"
+  fi
+fi
+
+echo
+echo "Run 'virt-3d list' to see which domains have acceleration wired up."
+echo

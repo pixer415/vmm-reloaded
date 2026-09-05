@@ -1,0 +1,144 @@
+# VMM Reloaded - virt-manager for ZimaOS, with its own hypervisor.
+#
+# Own-hypervisor mode: this container runs its own libvirtd and its own QEMU,
+# built with the OpenGL/virgl modules, rather than driving the libvirtd that
+# ZimaOS uses for ZVM. That is what makes guest 3D acceleration possible on a
+# box whose host QEMU has no GL support. The trade-off is that VMs created here
+# do not appear on ZimaOS's own Virtual Machine page.
+#
+# BEFORE PUBLISHING, replace the pixer415 and vmm-reloaded placeholders with your GitHub
+# username and repository name. ZimaOS installs from a registry and cannot build
+# from source; .github/workflows/publish-image.yml builds and pushes the image
+# for you on every push to main.
+#
+# No dollar sign appears in this file on purpose: ZimaOS reduces the compose
+# escape form when it saves, and docker compose then substitutes empty string.
+
+name: virt-manager-reloaded
+
+services:
+  virt-manager-reloaded:
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.0
+    container_name: virt-manager-reloaded
+    hostname: virt-manager-reloaded
+    restart: unless-stopped
+
+    ports:
+      - mode: ingress
+        target: 80
+        published: "8185"
+        protocol: tcp
+
+    environment:
+      # Run libvirtd and QEMU inside this container. This is the whole point of
+      # the app; setting it to "N" turns it back into a client for some other
+      # libvirtd and gives up the GPU support.
+      LIBVIRTD: "Y"
+      # Connect to the daemon this container runs.
+      HOSTS: "['qemu:///system']"
+      # Look for a DRM render node at startup. Guests fall back to software
+      # rendering, with a line in the log, if none is usable.
+      GPU: "Y"
+      # Pin a render node such as "/dev/dri/renderD129" on a box with more than
+      # one GPU. Empty autodetects.
+      RENDERNODE: ""
+      # Start libvirt's "default" NAT network so guests get networking. Needs
+      # the NET_ADMIN capability and /dev/net/tun, both granted below.
+      LIBVIRT_NETWORK: "Y"
+      DARK_MODE: "false"
+
+    volumes:
+      # Guest disk images. Repoint this at a larger pool if you keep big VMs -
+      # /DATA/AppData sits on the system volume.
+      - /DATA/AppData/virt-manager-reloaded/images:/var/lib/libvirt/images
+      # VM definitions and the default network, so they survive an app update.
+      - /DATA/AppData/virt-manager-reloaded/config:/etc/libvirt/qemu
+      # Installer ISOs, read-only.
+      - /DATA/Media:/DATA/Media:ro
+
+    devices:
+      # Hardware virtualisation. Without it guests run under TCG emulation.
+      - /dev/kvm:/dev/kvm
+      # The GPU. This is the device that makes 3D acceleration work.
+      - /dev/dri:/dev/dri
+      # Guest network interfaces.
+      - /dev/net/tun:/dev/net/tun
+
+    cap_add:
+      # libvirt builds the guest bridge and its NAT rules inside this
+      # container's own network namespace.
+      - NET_ADMIN
+
+x-casaos:
+  architectures:
+    - amd64
+  main: virt-manager-reloaded
+  id: io.github.pixer415.virt-manager-reloaded
+  store_app_id: virt-manager-reloaded
+  version: 1.0.0
+  author: pixer415
+  developer: pixer415
+  category: Developer
+  icon: icon.svg
+  thumbnail: ""
+  index: /
+  port_map: "8185"
+  scheme: http
+  website: https://github.com/pixer415/vmm-reloaded
+  repo: https://github.com/pixer415/vmm-reloaded
+  support: https://github.com/pixer415/vmm-reloaded/issues
+  title:
+    custom: VMM Reloaded
+    en_US: VMM Reloaded
+  tagline:
+    en_US: virt-manager with its own hypervisor, and guest GPU acceleration
+  description:
+    en_US: |
+      **VMM Reloaded** is the full virt-manager interface in your browser, with
+      a hypervisor of its own, so guests can render on the box's GPU.
+
+      - The real virt-manager UI over GTK Broadway - no VNC or RDP client
+      - Ships its own QEMU built with the OpenGL and virgl modules
+      - `virt-3d enable <vm>` wires a guest up for hardware rendering
+      - Full XML editing, snapshots, storage pools, USB passthrough
+      - Guest consoles stream in the browser, accelerated or not
+
+      **This app brings its own libvirtd.** It does not drive the one behind
+      ZimaOS's Virtual Machine page, so VMs created here will not show up
+      there, and VMs created there will not show up here. That separation is
+      deliberate: it is what lets the app ship a QEMU with GPU support on a
+      system whose own QEMU may not have it.
+
+      **Turning on 3D for a guest.** Create the VM as usual, then open the
+      terminal icon at the bottom left of the app and run:
+
+      ```
+      virt-3d enable my-vm
+      ```
+
+      That sets the video model to virtio with 3D acceleration and adds an
+      `egl-headless` device that renders on the GPU. Restart the VM afterwards.
+      Do not use the **OpenGL** checkbox on the Display page - it selects
+      SPICE's local-only dmabuf path, which a browser cannot display.
+
+      **If acceleration will not start,** run `virt-gpu-check` from the same
+      terminal. It walks the whole chain - render node, QEMU modules, Mesa,
+      libvirt - and names the layer that is missing.
+  tips:
+    before_install:
+      en_US: |
+        **This app runs its own hypervisor.** VMs you create here will not
+        appear on ZimaOS's Virtual Machine page, and vice versa. Install it as
+        a replacement for that page, not an addition to it.
+
+        **Hardware.** `/dev/kvm` is needed for usable speed and `/dev/dri` for
+        guest 3D. Both are granted below. The app still starts without them,
+        with a warning in the log and software rendering.
+
+        **Storage.** Guest disks default to
+        `/DATA/AppData/virt-manager-reloaded/images`, which lives on the system
+        volume. Point that mount at a larger pool before you build big VMs.
+
+        **After installing,** open the tile, create a VM, then run
+        `virt-3d enable <vm-name>` from the terminal icon at the bottom left to
+        turn on GPU rendering. Full notes are in the app description.

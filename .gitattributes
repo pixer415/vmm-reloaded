@@ -1,0 +1,3 @@
+# The container runs these; a CRLF checkout on Windows breaks the shebang line.
+* text=auto eol=lf
+*.gif binary

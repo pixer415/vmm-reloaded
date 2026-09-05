@@ -1,0 +1,47 @@
+name: Release store
+
+# Builds the v2 app store from zimaos/ and publishes it to the gh-pages branch,
+# which GitHub Pages then serves. ZimaOS imports a store from its store.json;
+# a zip source is rejected by the App Store UI with "Unsupported import method."
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-store
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the v2 store
+        uses: IceWhaleTech/build-appstore-action@v1
+        with:
+          source: zimaos
+          output: dist
+          # Resolves to https://<your-user>.github.io/<this-repo>, which is
+          # where the gh-pages branch below gets served from.
+          base-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+
+      - name: Show what was built
+        run: |
+          echo "--- dist tree ---"
+          find dist -type f | sort
+          echo "--- store.json ---"
+          cat dist/store.json
+
+      - name: Deploy dist to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./dist

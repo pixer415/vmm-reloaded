@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""Turn GPU acceleration on or off for a libvirt domain.
+
+virt-manager's Display page only offers the "OpenGL" checkbox for SPICE, and
+that path uses SPICE's local dmabuf handoff: the client has to sit on the same
+machine and be able to import the buffer through EGL. The Broadway viewer
+cannot, so the guest ends up rendering into a window nothing can show.
+
+This wires up the arrangement dockur/chromeos uses instead - virtio-vga-gl
+rendered by QEMU on the host GPU through an "egl-headless" display, with the
+resulting framebuffer handed to an ordinary VNC or SPICE server. That streams
+to any client, including the one embedded in virt-manager.
+
+  virt-3d list
+  virt-3d status  <domain>
+  virt-3d enable  <domain> [--rendernode /dev/dri/renderD128] [--display vnc|spice]
+  virt-3d disable <domain>
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+
+RENDERNODE_FILE = "/run/virt-reloaded/rendernode"
+URI = os.environ.get("LIBVIRT_DEFAULT_URI", "qemu:///system")
+
+
+def virsh(*args, check=True):
+    proc = subprocess.run(["virsh", "-c", URI, *args], capture_output=True, text=True)
+    if check and proc.returncode != 0:
+        sys.exit("virsh %s failed: %s" % (" ".join(args), proc.stderr.strip()))
+    return proc
+
+
+def default_rendernode():
+    try:
+        with open(RENDERNODE_FILE) as handle:
+            node = handle.read().strip()
+    except OSError:
+        node = ""
+    if node:
+        return node
+    if os.path.isdir("/dev/dri"):
+        for candidate in sorted(os.listdir("/dev/dri")):
+            if candidate.startswith("renderD"):
+                return "/dev/dri/" + candidate
+    return ""
+
+
+def load(domain):
+    return ET.fromstring(virsh("dumpxml", domain, "--inactive").stdout)
+
+
+def define(root):
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as handle:
+        handle.write(ET.tostring(root, encoding="unicode"))
+        path = handle.name
+    try:
+        virsh("define", path)
+    finally:
+        os.unlink(path)
+
+
+def devices(root):
+    node = root.find("devices")
+    if node is None:
+        node = ET.SubElement(root, "devices")
+    return node
+
+
+def find_video(devs):
+    """The video device a guest actually boots on, or None if it has none."""
+    videos = devs.findall("video")
+    for video in videos:
+        model = video.find("model")
+        if model is not None and model.get("primary") == "yes":
+            return video
+    return videos[0] if videos else None
+
+
+def primary_video(devs):
+    video = find_video(devs)
+    return video if video is not None else ET.SubElement(devs, "video")
+
+
+def graphics_by_type(devs, gtype):
+    return [g for g in devs.findall("graphics") if g.get("type") == gtype]
+
+
+def viewable_graphics(devs):
+    return graphics_by_type(devs, "spice") + graphics_by_type(devs, "vnc")
+
+
+def listen_type(gfx):
+    listen = gfx.find("listen")
+    return listen.get("type") if listen is not None else "address"
+
+
+def describe(root):
+    devs = devices(root)
+
+    video = find_video(devs)
+    model = video.find("model") if video is not None else None
+
+    accel = "no"
+    if model is not None:
+        acceleration = model.find("acceleration")
+        if acceleration is not None and acceleration.get("accel3d") == "yes":
+            accel = "yes"
+
+    rendernode = "no"
+    egl = graphics_by_type(devs, "egl-headless")
+    if egl:
+        gl = egl[0].find("gl")
+        rendernode = gl.get("rendernode") or "auto" if gl is not None else "auto"
+
+    display = ", ".join(
+        "%s(%s)" % (g.get("type"), listen_type(g)) for g in viewable_graphics(devs)
+    )
+
+    return {
+        "video": model.get("type") if model is not None else "none",
+        "accel3d": accel,
+        "egl-headless": rendernode,
+        "display": display or "none",
+    }
+
+
+ROW = "%-*s  %-8s  %-8s  %-22s  %s"
+
+
+def cmd_list(_args):
+    names = [n for n in virsh("list", "--all", "--name").stdout.split("\n") if n.strip()]
+    if not names:
+        print("no domains defined")
+        return
+    width = max(len(n) for n in names + ["DOMAIN"])
+    print(ROW % (width, "DOMAIN", "VIDEO", "ACCEL3D", "EGL-HEADLESS", "DISPLAY"))
+    for name in names:
+        info = describe(load(name))
+        print(ROW % (width, name, info["video"], info["accel3d"], info["egl-headless"], info["display"]))
+
+
+def cmd_status(args):
+    for key, value in describe(load(args.domain)).items():
+        print("%-14s %s" % (key + ":", value))
+
+
+def cmd_enable(args):
+    rendernode = args.rendernode or default_rendernode()
+    if not rendernode:
+        sys.exit("no DRM render node found; is /dev/dri passed into the container?")
+    if not os.path.exists(rendernode):
+        sys.exit("render node %s does not exist" % rendernode)
+
+    root = load(args.domain)
+    devs = devices(root)
+
+    # virtio is the only model QEMU can render through virgl.
+    video = primary_video(devs)
+    model = video.find("model")
+    if model is None:
+        model = ET.SubElement(video, "model")
+    model.set("type", "virtio")
+    model.set("heads", model.get("heads") or "1")
+    acceleration = model.find("acceleration")
+    if acceleration is None:
+        acceleration = ET.SubElement(model, "acceleration")
+    acceleration.set("accel3d", "yes")
+
+    # SPICE's own gl=on only reaches a local EGL client, so undo it and let
+    # egl-headless do the rendering instead.
+    for gfx in graphics_by_type(devs, "spice"):
+        gl = gfx.find("gl")
+        if gl is not None:
+            gfx.remove(gl)
+        listen = gfx.find("listen")
+        if listen is not None and listen.get("type") == "none":
+            listen.set("type", "address")
+            listen.set("address", "127.0.0.1")
+            gfx.set("autoport", "yes")
+
+    if not viewable_graphics(devs):
+        gfx = ET.SubElement(devs, "graphics")
+        gfx.set("type", args.display)
+        gfx.set("autoport", "yes")
+        listen = ET.SubElement(gfx, "listen")
+        listen.set("type", "address")
+        listen.set("address", "127.0.0.1")
+
+    egl = graphics_by_type(devs, "egl-headless")
+    gfx = egl[0] if egl else ET.SubElement(devs, "graphics")
+    gfx.set("type", "egl-headless")
+    gl = gfx.find("gl")
+    if gl is None:
+        gl = ET.SubElement(gfx, "gl")
+    gl.set("rendernode", rendernode)
+
+    define(root)
+    print("3D acceleration enabled on '%s' via %s" % (args.domain, rendernode))
+    print("restart the domain for the change to take effect")
+
+
+def cmd_disable(args):
+    root = load(args.domain)
+    devs = devices(root)
+
+    for gfx in graphics_by_type(devs, "egl-headless"):
+        devs.remove(gfx)
+
+    for video in devs.findall("video"):
+        model = video.find("model")
+        if model is None:
+            continue
+        acceleration = model.find("acceleration")
+        if acceleration is not None:
+            model.remove(acceleration)
+
+    for gfx in graphics_by_type(devs, "spice"):
+        gl = gfx.find("gl")
+        if gl is not None:
+            gfx.remove(gl)
+
+    define(root)
+    print("3D acceleration disabled on '%s'" % args.domain)
+    print("restart the domain for the change to take effect")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Toggle GPU acceleration for a libvirt domain.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("list", help="show every domain's acceleration state").set_defaults(func=cmd_list)
+
+    status = sub.add_parser("status", help="show one domain's acceleration state")
+    status.add_argument("domain")
+    status.set_defaults(func=cmd_status)
+
+    enable = sub.add_parser("enable", help="add virtio-vga-gl + egl-headless to a domain")
+    enable.add_argument("domain")
+    enable.add_argument("--rendernode", default="", help="DRM render node (default: autodetected)")
+    enable.add_argument(
+        "--display",
+        default="vnc",
+        choices=["vnc", "spice"],
+        help="display to add if the domain has none (default: vnc)",
+    )
+    enable.set_defaults(func=cmd_enable)
+
+    disable = sub.add_parser("disable", help="strip acceleration back out of a domain")
+    disable.add_argument("domain")
+    disable.set_defaults(func=cmd_disable)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

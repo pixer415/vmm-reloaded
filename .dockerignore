@@ -1,0 +1,7 @@
+.git
+.github
+*.gif
+*.md
+LICENSE
+docker-compose.yml
+zimaos

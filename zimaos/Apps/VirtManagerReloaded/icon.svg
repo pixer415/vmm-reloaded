@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="VMM Reloaded">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#g)"/>
+
+  <!-- Monitor: the virt-manager console -->
+  <rect x="52" y="62" width="152" height="106" rx="12"
+        fill="none" stroke="#ffffff" stroke-width="12"/>
+  <path d="M104 194h48M128 168v26"
+        stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- GPU die on the screen: what this fork adds -->
+  <rect x="98" y="94" width="60" height="42" rx="7" fill="#ffffff"/>
+  <rect x="112" y="106" width="32" height="18" rx="3" fill="#1d4ed8"/>
+  <path d="M110 82v12M128 82v12M146 82v12M110 136v12M128 136v12M146 136v12
+           M86 104h12M86 126h12M158 104h12M158 126h12"
+        stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+</svg>

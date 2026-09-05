@@ -1,28 +1,72 @@
-services: 
+services:
   virt-manager:
-    image: mber5/virt-manager:latest
+    # Built locally: the acceleration lives in this repo's Dockerfile, not in
+    # the published mber5/virt-manager image.
+    build: .
+    image: virt-manager-reloaded:latest
     restart: always
     ports:
       - 8185:80
 
     environment:
     # Set DARK_MODE to true to enable dark mode
-      DARK_MODE: false 
-    # If connecting to remote libvirtd, you can use a qemu+ssh string like below. Default qemu:///system will connect to local libvirtd: 
+      DARK_MODE: false
+    # If connecting to remote libvirtd, you can use a qemu+ssh string like below. Default qemu:///system will connect to local libvirtd:
     # HOSTS: "['qemu+ssh://user@host1/system', 'qemu+ssh://user@host2/system']"
       HOSTS: "['qemu:///system']"
 
-    # If on an Ubuntu host (or any host with the libvirt AppArmor policy, you will need to use an ssh connection to localhost
-    # or use qemu:///system and uncomment the below line to run the container in privileged mode: 
-    # privileged: true
+    # Run libvirtd + QEMU inside this container instead of only driving a remote
+    # or bind-mounted one. This is what makes the "3D acceleration" checkbox
+    # work: the in-container QEMU carries the OpenGL/virgl modules.
+    # Set to "N" for the original client-only behaviour.
+      LIBVIRTD: "Y"
+
+    # Hardware rendering for the guests. Needs /dev/dri below.
+      GPU: "Y"
+    # Pin a render node, e.g. "/dev/dri/renderD129", when the host has more
+    # than one GPU. Empty means autodetect.
+      RENDERNODE: ""
+
+    # Start libvirt's "default" NAT network on boot. It only succeeds when the
+    # NET_ADMIN capability and /dev/net/tun are present (see the bottom of this
+    # file); without them the container logs a warning and carries on.
+      LIBVIRT_NETWORK: "Y"
 
     volumes:
-    # Volumes needed if connecting to local qemu:///system
-      - "/var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock"
+    # Guest disks, shared with the host so they survive a rebuild
       - "/var/lib/libvirt/images:/var/lib/libvirt/images"
+    # Definitions of the VMs you create. A named volume, not a bind mount, so
+    # that Docker seeds it with the image's networks/default.xml on first run.
+      - "libvirt-config:/etc/libvirt/qemu"
+
+    # LIBVIRTD=Y means this container runs its own daemon, so the host's socket
+    # must NOT be mounted over it. Uncomment the next line only together with
+    # LIBVIRTD: "N", to go back to driving the host's libvirtd - in which case
+    # the 3D checkboxes depend on the host's QEMU, not on this image.
+      # - "/var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock"
 
     # If connecting to remote libvirtd, substitute location of ssh private key, e.g.:
       # - /home/user/.ssh/id_rsa:/root/.ssh/id_rsa:ro
+
+    # Mount the host's udev database read-only to populate virt-manager's
+    # render node dropdown. Cosmetic only; autodetection works without it.
+      # - "/run/udev:/run/udev:ro"
+
     devices:
     # Not needed if connecting to remote libvirtd
       - "/dev/kvm:/dev/kvm"
+    # Required for 3D acceleration - the same device the chromeos container uses
+      - "/dev/dri:/dev/dri"
+    # Uncomment together with cap_add below for libvirt's default NAT network
+      # - "/dev/net/tun:/dev/net/tun"
+
+    # Uncomment for guest networking through libvirt's default NAT network.
+    # cap_add:
+    #   - NET_ADMIN
+
+    # If on an Ubuntu host (or any host with the libvirt AppArmor policy), you may
+    # need to run the container in privileged mode:
+    # privileged: true
+
+volumes:
+  libvirt-config:
