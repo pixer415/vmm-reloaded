@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.1.0
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.1.1
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -59,6 +59,11 @@ services:
       - /DATA/AppData/virt-manager-reloaded/images:/var/lib/libvirt/images
       # VM definitions and the default network, so they survive an app update.
       - /DATA/AppData/virt-manager-reloaded/config:/etc/libvirt/qemu
+      # UEFI boot variables. A guest with UEFI firmware that loses these still
+      # has its disk but no longer boots.
+      - /DATA/AppData/virt-manager-reloaded/nvram:/var/lib/libvirt/qemu/nvram
+      # Emulated TPM state, which a Windows 11 guest needs to keep.
+      - /DATA/AppData/virt-manager-reloaded/swtpm:/var/lib/libvirt/swtpm
       # Installer ISOs, read-only.
       - /DATA/Media:/DATA/Media:ro
 
@@ -88,7 +93,7 @@ services:
 x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
-  version: 1.1.0
+  version: 1.1.1
   icon: https://pixer415.github.io/vmm-reloaded/apps/io.github.pixer415.virt-manager-reloaded/assets/icon.svg
   index: /
   port_map: "8185"
