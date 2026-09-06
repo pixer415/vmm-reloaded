@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.6
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.7
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -67,6 +67,16 @@ services:
       # libvirt builds the guest bridge and its NAT rules inside this
       # container's own network namespace.
       - NET_ADMIN
+      # Docker mounts /proc/sys read-only, and libvirt's network driver has to
+      # write to it to bring virbr0 up. NET_ADMIN creates the bridge but cannot
+      # tune it; SYS_ADMIN lets the container remount /proc/sys for itself.
+      # Drop this and guests get no networking - everything else still works.
+      - SYS_ADMIN
+
+    sysctls:
+      # Set at creation, when /proc/sys is still writable, so forwarding is
+      # already on by the time libvirt looks.
+      - net.ipv4.ip_forward=1
 
 x-casaos:
   architectures:
@@ -74,7 +84,7 @@ x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
   store_app_id: virt-manager-reloaded
-  version: 1.0.6
+  version: 1.0.7
   author: pixer415
   developer: pixer415
   category: Developer
@@ -140,3 +150,30 @@ x-casaos:
         **After installing,** open the tile, create a VM, then use the **GPU
         Acceleration** window that opens beside Virtual Machine Manager: one
         switch per machine, then restart the machine. No command line needed.
+
+# ---------------------------------------------------------------------------
+# Optional: give this container its own address on your LAN.
+#
+# What it does NOT do is put the guests on your LAN. macvlan sub-interfaces are
+# MAC-filtered, so traffic returning to a guest's own MAC is dropped by the
+# parent interface - the same wall macvtap hits. Guests stay behind libvirt's
+# NAT either way.
+#
+# What it does give you: the app on its own IP, no port sharing with ZimaOS,
+# and guests one NAT hop from the LAN instead of two.
+#
+# Create the network once on the Zima box, matching your own LAN:
+#
+#   docker network create -d macvlan #     --subnet=192.168.1.0/24 --gateway=192.168.1.1 #     --ip-range=192.168.1.240/28 -o parent=eth0 vmlan
+#
+# Then delete the "ports:" block above - with its own IP every port is already
+# reachable - and add:
+#
+# networks:
+#   default:
+#     name: vmlan
+#     external: true
+#
+# The standard macvlan caveat applies: the Zima box itself cannot reach the
+# container over macvlan. Other machines on the LAN can.
+# ---------------------------------------------------------------------------

@@ -172,6 +172,8 @@ Run `virt-gpu-check` from the web UI's terminal first; it walks the whole chain.
 | `Unable to create cgroup` | `cgroup_controllers = []` was not applied - check the managed block at the end of `qemu.conf` |
 | Guest boots, console is black | SPICE `gl=on` with the Broadway viewer. Use `virt-3d enable` instead. |
 | Guest has no network | libvirt's default NAT network needs `cap_add: NET_ADMIN` and `/dev/net/tun`; both are commented out in the compose file |
+| `cannot open macvtap tap device /dev/tapN` | macvtap cannot work from inside a container: the netns has only a veth, and there is no udev to create the device node. Use the `default` virtual network instead |
+| Network source list is much shorter than the host's | expected. This container runs its own libvirtd in its own network namespace, so it sees only `lo` and `eth0`. Host bridges belong to the host's libvirtd (`LIBVIRTD=N`) |
 | `Failed to connect socket to '/var/run/libvirt/libvirt-sock': Connection refused` after a restart | a stale socket from the previous container run. Fixed in 1.0.5; before that, recreating the container rather than restarting it worked around it |
 
 The render node dropdown on the Display page stays empty unless the host's udev database is

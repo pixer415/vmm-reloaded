@@ -161,23 +161,62 @@ libvirt_start() {
 
 # The default NAT network needs NET_ADMIN and /dev/net/tun. Both are optional
 # additions to the compose file, so never treat a failure here as fatal.
-libvirt_start_network() {
+# Docker mounts /proc/sys read-only. NET_ADMIN is enough to create virbr0 but
+# not to tune it, so libvirt's NAT network dies on the first sysctl write:
+#   cannot write to '/proc/sys/net/ipv6/conf/virbr0/disable_ipv6': Read-only
+# With CAP_SYS_ADMIN we can remount it for our own mount namespace. Without,
+# say so plainly instead of letting the network fail with a cryptic message.
+libvirt_unlock_procsys() {
 
-  virsh -c qemu:///system net-info default >/dev/null 2>&1 || {
-    libvirt_log "no 'default' network defined, skipping"
-    return 0
-  }
+  [ -w /proc/sys/net/ipv4/ip_forward ] && return 0
 
-  if virsh -c qemu:///system net-list --name 2>/dev/null | grep -qx "default"; then
+  if mount -o remount,rw /proc/sys 2>/dev/null && [ -w /proc/sys/net/ipv4/ip_forward ]; then
+    libvirt_log "remounted /proc/sys read-write for the network driver"
     return 0
   fi
 
+  libvirt_log "/proc/sys is read-only, so libvirt cannot bring up its NAT network"
+  libvirt_log "add 'cap_add: [SYS_ADMIN]' to the compose file (or 'privileged: true')"
+  return 1
+}
+
+libvirt_start_network() {
+
+  local err
+
+  # A bind-mounted /etc/libvirt/qemu that was created before the seeding logic
+  # existed, or half-populated by hand, can leave no network defined at all.
+  # Put it back from the skeleton rather than leave guests with nothing to pick.
+  if ! virsh -c qemu:///system net-info default >/dev/null 2>&1; then
+    local skel="/usr/local/share/virt-reloaded/qemu-skel/networks/default.xml"
+    if [ -f "$skel" ] && virsh -c qemu:///system net-define "$skel" >/dev/null 2>&1; then
+      libvirt_log "re-defined the missing 'default' network"
+    else
+      libvirt_log "no 'default' network is defined and it could not be restored"
+      libvirt_log "guests will have no virtual network to choose"
+      return 0
+    fi
+  fi
+
+  if virsh -c qemu:///system net-list --name 2>/dev/null | grep -qx "default"; then
+    libvirt_log "the 'default' NAT network is already running"
+    return 0
+  fi
+
+  libvirt_unlock_procsys || true
   virsh -c qemu:///system net-autostart default >/dev/null 2>&1 || true
 
-  if virsh -c qemu:///system net-start default >/dev/null 2>&1; then
+  # Keep libvirt's own message. Whatever goes wrong here - a missing
+  # capability, a firewall backend the container cannot drive, a bridge name
+  # already taken - the reason is in that text and nowhere else.
+  if err="$(virsh -c qemu:///system net-start default 2>&1)"; then
     libvirt_log "started the 'default' NAT network"
   else
-    libvirt_log "could not start the 'default' network - add 'cap_add: [NET_ADMIN]' and 'devices: [/dev/net/tun]' to your compose file if guests need NAT"
+    libvirt_log "could not start the 'default' network:"
+    while IFS= read -r line; do
+      [ -n "$line" ] && libvirt_log "  $line"
+    done <<< "$err"
+    libvirt_log "guests need this for networking - it requires cap_add NET_ADMIN and /dev/net/tun"
   fi
 
   return 0

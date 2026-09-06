@@ -109,6 +109,7 @@ RUN apt-get install -y --no-install-recommends \
       libvirt-clients \
       dnsmasq-base \
       iptables \
+      nftables \
       iproute2 \
       netcat-openbsd
 
