@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.7
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.1.0
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -44,6 +44,13 @@ services:
       # Start libvirt's "default" NAT network so guests get networking. Needs
       # the NET_ADMIN capability and /dev/net/tun, both granted below.
       LIBVIRT_NETWORK: "Y"
+    # Put guests straight on your LAN through a spare NIC, so your router hands
+    # them their own addresses. Needs the macvlan network at the bottom of this
+    # file; leave it "N" unless you have set that up.
+      VM_BRIDGE: "N"
+    # Which interface inside the container is the spare NIC. Empty autodetects
+    # the one that is not carrying the container's own route.
+      VM_BRIDGE_UPLINK: ""
       DARK_MODE: "false"
 
     volumes:
@@ -81,7 +88,7 @@ services:
 x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
-  version: 1.0.7
+  version: 1.1.0
   icon: https://pixer415.github.io/vmm-reloaded/apps/io.github.pixer415.virt-manager-reloaded/assets/icon.svg
   index: /
   port_map: "8185"
