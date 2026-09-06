@@ -192,6 +192,13 @@ def cmd_enable(args):
     model = video.find("model")
     if model is None:
         model = ET.SubElement(video, "model")
+
+    # libvirt rejects these outright on anything but qxl, and qxl is what
+    # virt-manager creates by default - so they have to go with the type.
+    if model.get("type") != "virtio":
+        for qxl_only in ("ram", "vram64", "vgamem"):
+            model.attrib.pop(qxl_only, None)
+
     model.set("type", "virtio")
     model.set("heads", model.get("heads") or "1")
     acceleration = model.find("acceleration")

@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.5
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.6
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -74,7 +74,7 @@ x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
   store_app_id: virt-manager-reloaded
-  version: 1.0.5
+  version: 1.0.6
   author: pixer415
   developer: pixer415
   category: Developer
