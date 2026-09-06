@@ -19,24 +19,38 @@
 
 net_log() { echo "[net] $*"; }
 
-# The interface Docker gave us for the macvlan network: everything that is not
-# loopback, not the one carrying the default route, and not something we or
-# libvirt created.
+net_is_macvlan() {
+  ip -d link show "$1" 2>/dev/null | grep -q 'macvlan'
+}
+
+# Find the interface Docker gave us for the macvlan network.
+#
+# Identify it by what it *is*, not by which one lacks a default route: when a
+# container joins both a bridge and a macvlan network, Docker may put the
+# default route on the macvlan, and a route-based guess would then pick the
+# bridge interface and enslave the container's own lifeline.
 net_find_uplink() {
 
-  local dev default_dev
+  local dev default_dev fallback=""
 
   default_dev="$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')"
 
   for dev in /sys/class/net/*; do
     dev="${dev##*/}"
     case "$dev" in
-      lo | "$default_dev" | "$VM_BRIDGE_NAME" | virbr* | vnet* | veth* | docker* ) continue ;;
+      lo | "$VM_BRIDGE_NAME" | virbr* | vnet* | veth* | docker* | br-* ) continue ;;
     esac
-    echo "$dev"
-    return 0
+
+    if net_is_macvlan "$dev"; then
+      echo "$dev"
+      return 0
+    fi
+
+    # Only as a fallback, and only for something that is not the way out.
+    [ -z "$fallback" ] && [ "$dev" != "$default_dev" ] && fallback="$dev"
   done
 
+  [ -n "$fallback" ] && { echo "$fallback"; return 0; }
   return 1
 }
 
@@ -57,7 +71,8 @@ net_build_bridge() {
 
   if ! net_has_other_route "$uplink"; then
     net_log "refusing to enslave '$uplink': it carries this container's only route"
-    net_log "attach the app to its normal bridge network as well as the macvlan one"
+    net_log "either the app is not also on its normal bridge network, or Docker put"
+    net_log "the default route on the macvlan - check 'ip route' inside the container"
     return 1
   fi
 
