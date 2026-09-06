@@ -29,10 +29,38 @@ libvirt_replace_block() {
   } >> "$conf"
 }
 
-# True when something outside the container already owns the socket, i.e. the
-# original compose file bind-mounted the host's libvirtd in.
-libvirt_socket_is_foreign() {
-  [ -S "$LIBVIRT_SOCK" ]
+# True only when the host really did bind-mount its socket in. A bind mount is
+# a mount point; a socket our own previous run left behind is not. The two look
+# identical to a plain [ -S ] test, and mistaking one for the other means never
+# starting a daemon at all.
+libvirt_socket_is_bind_mounted() {
+  awk '{print $5}' /proc/self/mountinfo 2>/dev/null \
+    | grep -qx -e /var/run/libvirt/libvirt-sock -e /run/libvirt/libvirt-sock
+}
+
+# Is anything actually behind the socket? A socket file with no daemon on the
+# other end answers "Connection refused", which is exactly what a restarted
+# container finds sitting in /run from its previous life.
+libvirt_daemon_responds() {
+  virsh -c qemu:///system version >/dev/null 2>&1
+}
+
+# /run is part of the container's writable layer, so sockets and pidfiles
+# outlive a restart. libvirtd will not start while a stale pidfile still claims
+# the lock, and the dead sockets confuse everything that tries to connect.
+libvirt_clear_stale_runtime() {
+
+  rm -f /var/run/libvirt/libvirt-sock \
+        /var/run/libvirt/libvirt-sock-ro \
+        /var/run/libvirt/libvirt-admin-sock \
+        /var/run/libvirt/virtlogd-sock \
+        /var/run/libvirt/virtlogd-admin-sock \
+        /var/run/libvirtd.pid \
+        /var/run/virtlogd.pid 2>/dev/null || true
+
+  # Per-domain state for guests that died with the previous container. Leaving
+  # these makes libvirt believe those domains are still running.
+  rm -f /var/run/libvirt/qemu/*.pid 2>/dev/null || true
 }
 
 # Rewrite our block in qemu.conf. Everything here exists because libvirt makes
@@ -98,6 +126,7 @@ libvirt_start() {
 
   mkdir -p /var/run/libvirt /var/log/libvirt /var/lib/libvirt/images /var/cache/libvirt 2>/dev/null || true
   libvirt_seed_config
+  libvirt_clear_stale_runtime
 
   if ! command -v libvirtd >/dev/null 2>&1; then
     libvirt_log "libvirtd is not installed, skipping"

@@ -44,7 +44,7 @@ so the "3D acceleration" checkbox is backed by a QEMU that actually has the GL d
 | `libvirglrenderer1`, Mesa EGL/GBM/DRI | host-side renderer; without it QEMU has the `-gl` devices but dies with `egl: render node init failed` |
 | `libvirt-daemon-system` + `qemu-system-x86` | the in-container hypervisor |
 | [`src/gpu.sh`](src/gpu.sh) | picks a usable DRM render node the way `qemus/qemu`'s `display.sh` does, and recreates missing `/dev/dri` nodes |
-| [`src/libvirt.sh`](src/libvirt.sh) | starts `virtlogd` + `libvirtd` and writes a container-appropriate `qemu.conf`, including the render node in `cgroup_device_acl` |
+| [`src/libvirt.sh`](src/libvirt.sh) | starts `virtlogd` + `libvirtd`, clears runtime state left in `/run` by a previous container, and writes a container-appropriate `qemu.conf` including the render node in `cgroup_device_acl` |
 | [`src/virt-3d`](src/virt-3d) | one command to wire acceleration into a domain correctly; `--json` feeds the GUI |
 | [`src/virt-3d-gui`](src/virt-3d-gui) | a GTK window with a switch per machine, so nobody has to meet tmux |
 | [`src/virt-gpu-check`](src/virt-gpu-check) | tells you which layer is missing when a guest still will not boot |
@@ -172,6 +172,7 @@ Run `virt-gpu-check` from the web UI's terminal first; it walks the whole chain.
 | `Unable to create cgroup` | `cgroup_controllers = []` was not applied - check the managed block at the end of `qemu.conf` |
 | Guest boots, console is black | SPICE `gl=on` with the Broadway viewer. Use `virt-3d enable` instead. |
 | Guest has no network | libvirt's default NAT network needs `cap_add: NET_ADMIN` and `/dev/net/tun`; both are commented out in the compose file |
+| `Failed to connect socket to '/var/run/libvirt/libvirt-sock': Connection refused` after a restart | a stale socket from the previous container run. Fixed in 1.0.5; before that, recreating the container rather than restarting it worked around it |
 
 The render node dropdown on the Display page stays empty unless the host's udev database is
 visible. Mount `/run/udev:/run/udev:ro` to populate it - autodetection does not need it.

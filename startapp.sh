@@ -36,8 +36,13 @@ LOCAL_LIBVIRT=0
 
 case "${LIBVIRTD^^}" in
   Y|YES|TRUE|1|ON )
-    if libvirt_socket_is_foreign; then
-      libvirt_log "$LIBVIRT_SOCK is already bind-mounted, using that daemon instead"
+    if libvirt_socket_is_bind_mounted; then
+      libvirt_log "$LIBVIRT_SOCK is bind-mounted from the host, using that daemon"
+      libvirt_daemon_responds \
+        || libvirt_log "warning: nothing is answering on it - is libvirtd running on the host?"
+      LOCAL_LIBVIRT=1
+    elif libvirt_daemon_responds; then
+      libvirt_log "a libvirtd is already answering on $LIBVIRT_SOCK"
       LOCAL_LIBVIRT=1
     elif libvirt_start; then
       LOCAL_LIBVIRT=1
@@ -89,7 +94,9 @@ case "${ACCEL_GUI^^}" in
   N|NO|FALSE|0|OFF )
     echo "[gui] acceleration window disabled (ACCEL_GUI=$ACCEL_GUI)" ;;
   * )
-    nohup dbus-launch /usr/local/bin/virt-3d-gui >/var/log/virt-3d-gui.log 2>&1 &
+    # NO_AT_BRIDGE keeps the accessibility bus warnings out of the log; there is
+    # no a11y bus in the container and they say nothing useful.
+    NO_AT_BRIDGE=1 nohup dbus-launch /usr/local/bin/virt-3d-gui >/var/log/virt-3d-gui.log 2>&1 &
     echo "[gui] acceleration window started" ;;
 esac
 
