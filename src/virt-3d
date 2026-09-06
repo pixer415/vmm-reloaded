@@ -18,6 +18,7 @@ to any client, including the one embedded in virt-manager.
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -99,41 +100,62 @@ def listen_type(gfx):
     return listen.get("type") if listen is not None else "address"
 
 
-def describe(root):
+def running_domains():
+    """Names of the domains libvirt currently has running."""
+    out = virsh("list", "--name", check=False)
+    return {n.strip() for n in out.stdout.split("\n") if n.strip()}
+
+
+def inspect(root):
+    """Structured view of one domain's acceleration setup."""
     devs = devices(root)
 
     video = find_video(devs)
     model = video.find("model") if video is not None else None
+    acceleration = model.find("acceleration") if model is not None else None
 
-    accel = "no"
-    if model is not None:
-        acceleration = model.find("acceleration")
-        if acceleration is not None and acceleration.get("accel3d") == "yes":
-            accel = "yes"
-
-    rendernode = "no"
     egl = graphics_by_type(devs, "egl-headless")
-    if egl:
-        gl = egl[0].find("gl")
-        rendernode = gl.get("rendernode") or "auto" if gl is not None else "auto"
-
-    display = ", ".join(
-        "%s(%s)" % (g.get("type"), listen_type(g)) for g in viewable_graphics(devs)
-    )
+    gl = egl[0].find("gl") if egl else None
 
     return {
-        "video": model.get("type") if model is not None else "none",
-        "accel3d": accel,
-        "egl-headless": rendernode,
-        "display": display or "none",
+        "video": model.get("type") if model is not None else None,
+        "accel3d": acceleration is not None and acceleration.get("accel3d") == "yes",
+        "egl_headless": bool(egl),
+        "rendernode": (gl.get("rendernode") or "auto") if gl is not None else None,
+        "displays": [
+            {"type": g.get("type"), "listen": listen_type(g)} for g in viewable_graphics(devs)
+        ],
+    }
+
+
+def describe(root):
+    """The same view, flattened to the strings the text output prints."""
+    d = inspect(root)
+    return {
+        "video": d["video"] or "none",
+        "accel3d": "yes" if d["accel3d"] else "no",
+        "egl-headless": d["rendernode"] or "no",
+        "display": ", ".join("%s(%s)" % (x["type"], x["listen"]) for x in d["displays"]) or "none",
     }
 
 
 ROW = "%-*s  %-8s  %-8s  %-22s  %s"
 
 
-def cmd_list(_args):
+def cmd_list(args):
     names = [n for n in virsh("list", "--all", "--name").stdout.split("\n") if n.strip()]
+
+    if getattr(args, "json", False):
+        running = running_domains()
+        payload = []
+        for name in names:
+            entry = inspect(load(name))
+            entry["name"] = name
+            entry["running"] = name in running
+            payload.append(entry)
+        print(json.dumps(payload, indent=2))
+        return
+
     if not names:
         print("no domains defined")
         return
@@ -145,6 +167,12 @@ def cmd_list(_args):
 
 
 def cmd_status(args):
+    if getattr(args, "json", False):
+        entry = inspect(load(args.domain))
+        entry["name"] = args.domain
+        entry["running"] = args.domain in running_domains()
+        print(json.dumps(entry, indent=2))
+        return
     for key, value in describe(load(args.domain)).items():
         print("%-14s %s" % (key + ":", value))
 
@@ -233,10 +261,13 @@ def main():
     parser = argparse.ArgumentParser(description="Toggle GPU acceleration for a libvirt domain.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("list", help="show every domain's acceleration state").set_defaults(func=cmd_list)
+    listcmd = sub.add_parser("list", help="show every domain's acceleration state")
+    listcmd.add_argument("--json", action="store_true", help="machine-readable output")
+    listcmd.set_defaults(func=cmd_list)
 
     status = sub.add_parser("status", help="show one domain's acceleration state")
     status.add_argument("domain")
+    status.add_argument("--json", action="store_true", help="machine-readable output")
     status.set_defaults(func=cmd_status)
 
     enable = sub.add_parser("enable", help="add virtio-vga-gl + egl-headless to a domain")

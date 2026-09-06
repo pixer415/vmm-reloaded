@@ -31,7 +31,11 @@ else
   done
   [ "$found" = 1 ] || bad "/dev/dri holds no renderD* node"
 fi
-[ -r /run/virt-reloaded/rendernode ] && note "selected: $(cat /run/virt-reloaded/rendernode)"
+NODE=""
+if [ -r /run/virt-reloaded/rendernode ]; then
+  NODE="$(cat /run/virt-reloaded/rendernode)"
+  note "selected: $NODE"
+fi
 
 echo
 echo "QEMU"
@@ -49,10 +53,13 @@ else
   else
     bad "egl-headless is missing - install qemu-system-modules-opengl"
   fi
-  if "$QEMU" -spice help >/dev/null 2>&1 || "$QEMU" -device help 2>&1 | grep -q "spice"; then
-    ok "SPICE support present"
+  # QEMU's -device list names no SPICE device, so look for the module files the
+  # spice package installs, and for qxl, which ships inside it.
+  if compgen -G "/usr/lib/*/qemu/ui-spice-core.so" >/dev/null 2>&1 \
+     || "$QEMU" -device help 2>&1 | grep -qi "qxl"; then
+    ok "SPICE support present (qemu-system-modules-spice)"
   else
-    note "SPICE support not detected - install qemu-system-modules-spice"
+    note "SPICE not detected - only matters if you want SPICE displays; egl-headless does not need it"
   fi
 fi
 
@@ -70,6 +77,31 @@ if command -v eglinfo >/dev/null 2>&1; then
   [ -n "$renderer" ] && ok "EGL renderer: $renderer" || note "eglinfo produced no renderer string"
 fi
 
+# The libraries being present does not mean EGL will come up on this node. Ask
+# QEMU to do the exact thing libvirt will ask of it, and read the answer.
+if [ -n "$NODE" ] && command -v "$QEMU" >/dev/null 2>&1; then
+  # -machine none starts nothing but the display; "quit" on the monitor makes
+  # QEMU exit the moment that display is up, rather than idling to the timeout.
+  probe="$(echo quit | timeout 20 "$QEMU" -machine none -nodefaults \
+             -display "egl-headless,rendernode=$NODE" \
+             -monitor stdio 2>&1)"
+  # Mesa prints this on AMD whenever kcmp() is unavailable, which is the normal
+  # state inside a container. It is noise, not a failure.
+  probe_real="$(grep -v 'os_same_file_description\|bad things may happen' <<< "$probe")"
+  if grep -qi 'egl' <<< "$probe_real" \
+     && grep -qiE 'fail|error|unable|not available|no such' <<< "$probe_real"; then
+    bad "EGL will not start on $NODE - guests with 3D will fail to boot"
+    note "$(grep -iE 'egl|drm|render' <<< "$probe_real" | head -3)"
+  elif grep -qiE 'is not a valid|invalid option|unknown display' <<< "$probe_real"; then
+    note "could not run the EGL probe on this QEMU; skipped"
+  else
+    ok "EGL starts on $NODE - egl-headless initialises cleanly"
+    if grep -q 'os_same_file_description' <<< "$probe"; then
+      note "(Mesa's amdgpu os_same_file_description notice is expected in a container)"
+    fi
+  fi
+fi
+
 echo
 echo "libvirt"
 if ! command -v virsh >/dev/null 2>&1; then
@@ -85,11 +117,23 @@ else
   else
     bad "libvirt does not report a virtio video model"
   fi
-  if grep -q "cgroup_device_acl" /etc/libvirt/qemu.conf 2>/dev/null; then
-    ok "qemu.conf carries a cgroup_device_acl"
-    note "$(grep -m1 'cgroup_device_acl' -A1 /etc/libvirt/qemu.conf | tr -d '\n' | cut -c1-160)"
+  # Match only an active setting. Ubuntu's stock qemu.conf carries a commented
+  # example of this key near the top, which is not the same thing at all.
+  acl="$(grep -m1 '^[[:space:]]*cgroup_device_acl' /etc/libvirt/qemu.conf 2>/dev/null)"
+  if [ -z "$acl" ]; then
+    bad "no active cgroup_device_acl in /etc/libvirt/qemu.conf"
+    note "the managed block should have been written at startup; check the app log"
+  elif grep -q "/dev/dri/render" <<< "$acl"; then
+    ok "qemu.conf grants a render node to guests"
   else
-    note "qemu.conf has no explicit cgroup_device_acl"
+    bad "cgroup_device_acl is set but lists no /dev/dri render node"
+    note "$(cut -c1-150 <<< "$acl")"
+  fi
+
+  if grep -q '^[[:space:]]*namespaces[[:space:]]*=[[:space:]]*\[\]' /etc/libvirt/qemu.conf 2>/dev/null; then
+    ok "qemu.conf is in container mode (namespaces disabled)"
+  else
+    bad "namespaces are still enabled; libvirt will try to build a private /dev"
   fi
 fi
 

@@ -45,7 +45,8 @@ so the "3D acceleration" checkbox is backed by a QEMU that actually has the GL d
 | `libvirt-daemon-system` + `qemu-system-x86` | the in-container hypervisor |
 | [`src/gpu.sh`](src/gpu.sh) | picks a usable DRM render node the way `qemus/qemu`'s `display.sh` does, and recreates missing `/dev/dri` nodes |
 | [`src/libvirt.sh`](src/libvirt.sh) | starts `virtlogd` + `libvirtd` and writes a container-appropriate `qemu.conf`, including the render node in `cgroup_device_acl` |
-| [`src/virt-3d`](src/virt-3d) | one command to wire acceleration into a domain correctly |
+| [`src/virt-3d`](src/virt-3d) | one command to wire acceleration into a domain correctly; `--json` feeds the GUI |
+| [`src/virt-3d-gui`](src/virt-3d-gui) | a GTK window with a switch per machine, so nobody has to meet tmux |
 | [`src/virt-gpu-check`](src/virt-gpu-check) | tells you which layer is missing when a guest still will not boot |
 
 Ports and Docker networking are unchanged from upstream: still `8185:80`, still bridge.
@@ -77,6 +78,7 @@ Dockerfile, not in the published `mber5/virt-manager` image.
 | `GPU` | `Y` | Look for a DRM render node at startup. |
 | `RENDERNODE` | *(empty)* | Pin a node, e.g. `/dev/dri/renderD129`. Empty autodetects. |
 | `LIBVIRT_NETWORK` | `Y` | Try to start libvirt's `default` NAT network. |
+| `ACCEL_GUI` | `Y` | Open the GPU Acceleration window at startup. |
 | `HOSTS` | `['qemu:///system']` | Same as upstream. Left empty with `LIBVIRTD=Y`, it defaults to the local daemon. |
 | `DARK_MODE` | `false` | Same as upstream. |
 
@@ -105,10 +107,16 @@ in a VNC framebuffer, drawn by gtk-vnc through Cairo, shipped to the browser by 
 GPU only changes what QEMU does *before* the framebuffer is filled. Nothing about viewing
 changes, which is exactly why this arrangement works here and SPICE's `gl=on` does not.
 
-The terminal icon at the bottom left of the web UI opens a tmux session with two
-windows: `shell`, a normal root prompt, in front, and `virt-manager` behind it holding
-the program's own output and any SSH password prompt. Switch by clicking the names in
-the status bar, or Ctrl+B then 0 / 1. From the `shell` window:
+The **GPU Acceleration** window opens beside virt-manager on the same Broadway page:
+one row per machine, one switch each, plus a **Check GPU** button that runs the full
+diagnostic. That is the whole workflow - no command line involved. Set `ACCEL_GUI=N`
+to keep it closed.
+
+Everything it does is a front end to `virt-3d`, which stays the single source of truth
+for the XML. The terminal icon at the bottom left opens a tmux session with two windows:
+`shell`, a normal root prompt, in front, and `virt-manager` behind it holding the
+program's own output and any SSH password prompt. Switch by clicking the names in the
+status bar, or Ctrl+B then 0 / 1. From the `shell` window:
 
 ```bash
 virt-3d enable my-vm

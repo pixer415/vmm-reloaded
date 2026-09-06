@@ -58,6 +58,13 @@ dbus-launch gsettings set org.virt-manager.virt-manager.connections uris "$HOSTS
 dbus-launch gsettings set org.virt-manager.virt-manager.connections autoconnect "$HOSTS"
 dbus-launch gsettings set org.virt-manager.virt-manager xmleditor-enabled true
 
+# Both GTK apps below need broadwayd listening before they will start. It comes
+# up in the background from /usr/local/bin/start, so give it a moment.
+for _ in $(seq 1 20); do
+  (echo > /dev/tcp/127.0.0.1/8085) >/dev/null 2>&1 && break
+  sleep 0.5
+done
+
 # virt-manager runs in the foreground of the tmux session that ttyd shows, so
 # that its SSH password prompts are reachable from the terminal tile. That also
 # means window 0 is not a usable shell: anything typed there goes to
@@ -74,6 +81,17 @@ tmux set -t ttyd -g monitor-activity on
 tmux set -t ttyd -g visual-activity off
 # Open on the shell: that is what someone clicking a terminal icon is after.
 tmux select-window -t ttyd:shell
+
+# The acceleration window, a second Broadway toplevel beside virt-manager, so
+# that turning 3D on for a guest never requires the command line. Closing it is
+# fine - 'virt-3d-gui &' from the shell window brings it back.
+case "${ACCEL_GUI^^}" in
+  N|NO|FALSE|0|OFF )
+    echo "[gui] acceleration window disabled (ACCEL_GUI=$ACCEL_GUI)" ;;
+  * )
+    nohup dbus-launch /usr/local/bin/virt-3d-gui >/var/log/virt-3d-gui.log 2>&1 &
+    echo "[gui] acceleration window started" ;;
+esac
 
 trap 'exit 0' SIGTERM
 while true; do sleep 1; done

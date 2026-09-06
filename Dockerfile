@@ -35,6 +35,8 @@ ENV GPU="Y"
 ENV RENDERNODE=""
 # Start libvirt's "default" NAT network. Needs cap_add NET_ADMIN + /dev/net/tun.
 ENV LIBVIRT_NETWORK="Y"
+# Open the point-and-click acceleration window next to virt-manager. N hides it.
+ENV ACCEL_GUI="Y"
 
 ARG DEBCONF_NOWARNINGS="yes"
 ARG DEBIAN_FRONTEND="noninteractive"
@@ -66,7 +68,7 @@ RUN if ! nginx -V 2>&1 | grep -q -- '--with-http_sub_module'; then \
     fi \
  && nginx -V 2>&1 | grep -q -- '--with-http_sub_module'
 
-RUN apt-get install -y --no-install-recommends virt-manager dbus-x11 libglib2.0-bin gir1.2-spiceclientgtk-3.0 ssh at-spi2-core
+RUN apt-get install -y --no-install-recommends virt-manager dbus-x11 libglib2.0-bin gir1.2-spiceclientgtk-3.0 ssh at-spi2-core python3-gi gir1.2-gtk-3.0
 
 # GTK's icon and MIME plumbing. --no-install-recommends leaves these out, and
 # without them virt-manager starts but logs "Could not load a pixbuf from icon
@@ -161,6 +163,7 @@ COPY startapp.sh /usr/local/bin/startapp
 RUN sed -i 's/\r$//' /usr/local/bin/startapp /usr/local/lib/virt-reloaded/* \
  && chmod 755 /usr/local/bin/startapp /usr/local/lib/virt-reloaded/* \
  && ln -sf /usr/local/lib/virt-reloaded/virt-3d /usr/local/bin/virt-3d \
+ && ln -sf /usr/local/lib/virt-reloaded/virt-3d-gui /usr/local/bin/virt-3d-gui \
  && ln -sf /usr/local/lib/virt-reloaded/virt-gpu-check /usr/local/bin/virt-gpu-check
 
 EXPOSE 80

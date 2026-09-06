@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.2
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.4
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -74,7 +74,7 @@ x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
   store_app_id: virt-manager-reloaded
-  version: 1.0.2
+  version: 1.0.4
   author: pixer415
   developer: pixer415
   category: Developer
@@ -98,7 +98,7 @@ x-casaos:
 
       - The real virt-manager UI over GTK Broadway - no VNC or RDP client
       - Ships its own QEMU built with the OpenGL and virgl modules
-      - `virt-3d enable <vm>` wires a guest up for hardware rendering
+      - A **GPU Acceleration** window: one switch per machine, no terminal
       - Full XML editing, snapshots, storage pools, USB passthrough
       - Guest consoles stream in the browser, accelerated or not
 
@@ -108,27 +108,20 @@ x-casaos:
       deliberate: it is what lets the app ship a QEMU with GPU support on a
       system whose own QEMU may not have it.
 
-      **The terminal tile has two windows.** The icon at the bottom left opens
-      a tmux session with `shell` in front - a normal root prompt - and
-      `virt-manager` behind it, carrying the program's own output and any SSH
-      password prompt it needs to ask you. Click either name in the bar at the
-      bottom to switch, or press Ctrl+B then 0 or 1.
+      **Turning on 3D for a guest.** Create the VM as usual, then switch to the
+      **GPU Acceleration** window that opens beside Virtual Machine Manager. It
+      lists every machine with a switch; flick the switch and restart the VM.
+      **Check GPU** in that window reports on the whole chain - render node,
+      QEMU modules, Mesa, libvirt - and names any layer that is missing.
 
-      **Turning on 3D for a guest.** Create the VM as usual, then open the
-      terminal and run, at the `shell` window:
+      Do not use the **OpenGL** checkbox on virt-manager's own Display page. It
+      selects SPICE's local-only dmabuf path, which a browser cannot display;
+      the switch sets up the arrangement that does work.
 
-      ```
-      virt-3d enable my-vm
-      ```
-
-      That sets the video model to virtio with 3D acceleration and adds an
-      `egl-headless` device that renders on the GPU. Restart the VM afterwards.
-      Do not use the **OpenGL** checkbox on the Display page - it selects
-      SPICE's local-only dmabuf path, which a browser cannot display.
-
-      **If acceleration will not start,** run `virt-gpu-check` from the same
-      terminal. It walks the whole chain - render node, QEMU modules, Mesa,
-      libvirt - and names the layer that is missing.
+      **If you prefer the command line,** the terminal icon at the bottom left
+      opens a tmux session with `shell` in front and `virt-manager` behind it,
+      carrying the program's output and any SSH password prompt. `virt-3d list`,
+      `virt-3d enable <vm>` and `virt-gpu-check` do the same jobs there.
   tips:
     before_install:
       en_US: |
@@ -144,7 +137,6 @@ x-casaos:
         `/DATA/AppData/virt-manager-reloaded/images`, which lives on the system
         volume. Point that mount at a larger pool before you build big VMs.
 
-        **After installing,** open the tile, create a VM, then run
-        `virt-3d enable <vm-name>` from the terminal icon at the bottom left to
-        turn on GPU rendering. That terminal opens on a `shell` window; the
-        `virt-manager` window beside it carries the program's own output.
+        **After installing,** open the tile, create a VM, then use the **GPU
+        Acceleration** window that opens beside Virtual Machine Manager: one
+        switch per machine, then restart the machine. No command line needed.
