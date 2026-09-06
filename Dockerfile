@@ -37,6 +37,13 @@ ENV RENDERNODE=""
 ENV LIBVIRT_NETWORK="Y"
 # Open the point-and-click acceleration window next to virt-manager. N hides it.
 ENV ACCEL_GUI="Y"
+# Put guests straight on the LAN through a spare NIC. Needs a second, passthru
+# macvlan network on the container; off by default because most installs have
+# no NIC to spare. See the app compose file.
+ENV VM_BRIDGE="N"
+# Which interface inside the container is that spare NIC. Empty autodetects.
+ENV VM_BRIDGE_UPLINK=""
+ENV VM_BRIDGE_NAME="br-lan"
 
 ARG DEBCONF_NOWARNINGS="yes"
 ARG DEBIAN_FRONTEND="noninteractive"

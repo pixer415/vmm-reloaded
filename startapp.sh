@@ -16,6 +16,8 @@ RENDERNODE=""
 . "$LIB/gpu.sh"
 # shellcheck source=src/libvirt.sh
 . "$LIB/libvirt.sh"
+# shellcheck source=src/network.sh
+. "$LIB/network.sh"
 
 # Find the GPU first: libvirt's qemu.conf needs the render node path baked into
 # its device ACL before the daemon starts.
@@ -48,6 +50,11 @@ case "${LIBVIRTD^^}" in
       LOCAL_LIBVIRT=1
       case "${LIBVIRT_NETWORK^^}" in
         Y|YES|TRUE|1|ON ) libvirt_start_network ;;
+      esac
+      # Guests on the LAN proper, if a spare NIC was handed to the container.
+      case "${VM_BRIDGE^^}" in
+        Y|YES|TRUE|1|ON )
+          net_setup || net_log "guests can still use the NAT network" ;;
       esac
     fi ;;
   * )

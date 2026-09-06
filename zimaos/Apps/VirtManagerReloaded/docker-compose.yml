@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.7
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.1.0
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -44,6 +44,13 @@ services:
       # Start libvirt's "default" NAT network so guests get networking. Needs
       # the NET_ADMIN capability and /dev/net/tun, both granted below.
       LIBVIRT_NETWORK: "Y"
+    # Put guests straight on your LAN through a spare NIC, so your router hands
+    # them their own addresses. Needs the macvlan network at the bottom of this
+    # file; leave it "N" unless you have set that up.
+      VM_BRIDGE: "N"
+    # Which interface inside the container is the spare NIC. Empty autodetects
+    # the one that is not carrying the container's own route.
+      VM_BRIDGE_UPLINK: ""
       DARK_MODE: "false"
 
     volumes:
@@ -84,7 +91,7 @@ x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
   store_app_id: virt-manager-reloaded
-  version: 1.0.7
+  version: 1.1.0
   author: pixer415
   developer: pixer415
   category: Developer
@@ -152,28 +159,47 @@ x-casaos:
         switch per machine, then restart the machine. No command line needed.
 
 # ---------------------------------------------------------------------------
-# Optional: give this container its own address on your LAN.
+# Optional: give guests real addresses from your router.
 #
-# What it does NOT do is put the guests on your LAN. macvlan sub-interfaces are
-# MAC-filtered, so traffic returning to a guest's own MAC is dropped by the
-# parent interface - the same wall macvtap hits. Guests stay behind libvirt's
-# NAT either way.
+# Needs a second NIC that nothing else on the box is using. Guest frames leave
+# on that NIC with their own MACs, so your router sees them as ordinary
+# machines - the same arrangement as vmbr0 on Proxmox.
 #
-# What it does give you: the app on its own IP, no port sharing with ZimaOS,
-# and guests one NAT hop from the LAN instead of two.
+# Three edits, all of them in this file. No commands on the ZimaOS host.
 #
-# Create the network once on the Zima box, matching your own LAN:
+#  1. Uncomment the networks: block at the bottom, and set "parent" to your
+#     spare NIC's name on the host (ip link, e.g. enp2s0). The subnet only has
+#     to be a range Docker can hand one unused address from; guests do not use
+#     it, they get their addresses from your router.
 #
-#   docker network create -d macvlan #     --subnet=192.168.1.0/24 --gateway=192.168.1.1 #     --ip-range=192.168.1.240/28 -o parent=eth0 vmlan
+#  2. Uncomment the two network entries under the service, so the app keeps its
+#     normal bridge for the web UI *and* gains the macvlan. Both are required:
+#     the app refuses to enslave an interface that carries its only route.
 #
-# Then delete the "ports:" block above - with its own IP every port is already
-# reachable - and add:
+#  3. Set VM_BRIDGE to "Y" above.
+#
+# macvlan_mode: passthru is not optional. In the default bridge mode a macvlan
+# only accepts frames addressed to its own MAC, so replies to a guest are
+# dropped. Passthru hands the container the whole NIC and permits the guest
+# MACs. It also means nothing else can share that NIC.
+#
+#    networks:
+#      - default
+#      - vmlan
 #
 # networks:
 #   default:
-#     name: vmlan
-#     external: true
+#   vmlan:
+#     driver: macvlan
+#     driver_opts:
+#       parent: enp2s0
+#       macvlan_mode: passthru
+#     ipam:
+#       config:
+#         - subnet: 192.168.0.0/24
+#           gateway: 192.168.0.1
+#           ip_range: 192.168.0.250/32
 #
-# The standard macvlan caveat applies: the Zima box itself cannot reach the
-# container over macvlan. Other machines on the LAN can.
+# Guests then pick the "lan" network in virt-manager. The NAT "default" network
+# stays available, so you can mix the two per machine.
 # ---------------------------------------------------------------------------

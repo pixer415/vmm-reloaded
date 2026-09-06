@@ -159,8 +159,6 @@ libvirt_start() {
   return 0
 }
 
-# The default NAT network needs NET_ADMIN and /dev/net/tun. Both are optional
-# additions to the compose file, so never treat a failure here as fatal.
 # Docker mounts /proc/sys read-only. NET_ADMIN is enough to create virbr0 but
 # not to tune it, so libvirt's NAT network dies on the first sysctl write:
 #   cannot write to '/proc/sys/net/ipv6/conf/virbr0/disable_ipv6': Read-only
@@ -170,7 +168,9 @@ libvirt_unlock_procsys() {
 
   [ -w /proc/sys/net/ipv4/ip_forward ] && return 0
 
-  if mount -o remount,rw /proc/sys 2>/dev/null && [ -w /proc/sys/net/ipv4/ip_forward ]; then
+  # The bind flag is required: without it mount tries to remount the procfs
+  # superblock instead of this bind mount, and the kernel refuses.
+  if mount -o remount,bind,rw /proc/sys 2>/dev/null && [ -w /proc/sys/net/ipv4/ip_forward ]; then
     libvirt_log "remounted /proc/sys read-write for the network driver"
     return 0
   fi

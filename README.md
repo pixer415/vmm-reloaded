@@ -45,6 +45,7 @@ so the "3D acceleration" checkbox is backed by a QEMU that actually has the GL d
 | `libvirt-daemon-system` + `qemu-system-x86` | the in-container hypervisor |
 | [`src/gpu.sh`](src/gpu.sh) | picks a usable DRM render node the way `qemus/qemu`'s `display.sh` does, and recreates missing `/dev/dri` nodes |
 | [`src/libvirt.sh`](src/libvirt.sh) | starts `virtlogd` + `libvirtd`, clears runtime state left in `/run` by a previous container, and writes a container-appropriate `qemu.conf` including the render node in `cgroup_device_acl` |
+| [`src/network.sh`](src/network.sh) | optional: builds a bridge over a spare NIC so guests get addresses from the router instead of libvirt's NAT |
 | [`src/virt-3d`](src/virt-3d) | one command to wire acceleration into a domain correctly; `--json` feeds the GUI |
 | [`src/virt-3d-gui`](src/virt-3d-gui) | a GTK window with a switch per machine, so nobody has to meet tmux |
 | [`src/virt-gpu-check`](src/virt-gpu-check) | tells you which layer is missing when a guest still will not boot |
@@ -79,6 +80,8 @@ Dockerfile, not in the published `mber5/virt-manager` image.
 | `RENDERNODE` | *(empty)* | Pin a node, e.g. `/dev/dri/renderD129`. Empty autodetects. |
 | `LIBVIRT_NETWORK` | `Y` | Try to start libvirt's `default` NAT network. |
 | `ACCEL_GUI` | `Y` | Open the GPU Acceleration window at startup. |
+| `VM_BRIDGE` | `N` | Bridge guests onto a spare NIC. Needs a passthru macvlan network. |
+| `VM_BRIDGE_UPLINK` | *(empty)* | Which container interface is that NIC. Empty autodetects. |
 | `HOSTS` | `['qemu:///system']` | Same as upstream. Left empty with `LIBVIRTD=Y`, it defaults to the local daemon. |
 | `DARK_MODE` | `false` | Same as upstream. |
 
@@ -184,6 +187,33 @@ visible. Mount `/run/udev:/run/udev:ro` to populate it - autodetection does not 
 Set `LIBVIRTD: "N"` and uncomment the `libvirt-sock` bind mount. The container then behaves
 exactly like upstream, and the 3D checkboxes depend on the host's QEMU rather than this
 image's.
+
+## Guests on the LAN instead of behind NAT
+
+By default guests sit on libvirt's `default` NAT network: outbound works, nothing
+reaches them from the LAN. If the machine has a **spare NIC that nothing else uses**,
+they can instead get real addresses from your router.
+
+The obstacle is that libvirt's NAT network writes to `/proc/sys`, which Docker mounts
+read-only, and that bridging guests onto an ordinary macvlan fails because macvlan
+sub-interfaces only accept frames addressed to their own MAC - replies to a guest are
+dropped. Both are avoided by the same arrangement:
+
+- A Docker macvlan network in **`passthru`** mode over the spare NIC. Passthru hands
+  the container the entire NIC, forces it promiscuous and permits guest MACs.
+- A plain Linux bridge built inside the container, with that interface enslaved.
+- A libvirt network in `<forward mode='bridge'/>`, which only adds guest taps -
+  no addresses, no dnsmasq, no firewall rules, so no sysctl writes at all.
+
+Guest taps then use `/dev/net/tun`, which exists, rather than the `/dev/tapN` node
+macvtap wants and no container has. This is the same shape as a dedicated-NIC `vmbr0`
+on Proxmox, with the bridge living inside the container.
+
+Turn it on with three edits in the app's compose file - all of them through ZimaOS's
+own app settings, no shell on the host. The block at the bottom of
+[the app compose](zimaos/Apps/VirtManagerReloaded/docker-compose.yml) spells them out.
+
+The app keeps both networks, so guests can be assigned either one.
 
 ## Packaging it as a ZimaOS app
 
