@@ -168,15 +168,21 @@ libvirt_unlock_procsys() {
 
   [ -w /proc/sys/net/ipv4/ip_forward ] && return 0
 
+  local err
   # The bind flag is required: without it mount tries to remount the procfs
-  # superblock instead of this bind mount, and the kernel refuses.
-  if mount -o remount,bind,rw /proc/sys 2>/dev/null && [ -w /proc/sys/net/ipv4/ip_forward ]; then
+  # superblock rather than this bind mount, and the kernel refuses outright.
+  if err="$(mount -o remount,bind,rw /proc/sys 2>&1)" \
+     && [ -w /proc/sys/net/ipv4/ip_forward ]; then
     libvirt_log "remounted /proc/sys read-write for the network driver"
     return 0
   fi
 
   libvirt_log "/proc/sys is read-only, so libvirt cannot bring up its NAT network"
-  libvirt_log "add 'cap_add: [SYS_ADMIN]' to the compose file (or 'privileged: true')"
+  [ -n "$err" ] && libvirt_log "  mount said: $err"
+  # Measured on ZimaOS: CAP_SYS_ADMIN is not sufficient here, the mount stays
+  # locked read-only. Only privileged mode clears it.
+  libvirt_log "add 'privileged: true' to the compose file - SYS_ADMIN alone is not enough"
+  libvirt_log "guests bridged onto a spare NIC (VM_BRIDGE=Y) need none of this"
   return 1
 }
 
