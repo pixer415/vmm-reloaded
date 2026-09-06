@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updated_at": "2026-09-06T00:03:19Z",
+  "updated_at": "2026-09-06T00:26:15Z",
   "app_count": 1,
   "base_url": "https://pixer415.github.io/vmm-reloaded",
   "apps": [
@@ -21,8 +21,8 @@
       "thumbnail": "",
       "compose_url": "/apps/io.github.pixer415.virt-manager-reloaded/docker-compose.yml",
       "meta_url": "/apps/io.github.pixer415.virt-manager-reloaded/meta.json",
-      "content_hash": "f53e1a1d",
-      "version": "1.0.4"
+      "content_hash": "911e65d2",
+      "version": "1.0.5"
     }
   ]
 }
