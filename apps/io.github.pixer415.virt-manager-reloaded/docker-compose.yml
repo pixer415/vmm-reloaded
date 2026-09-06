@@ -17,7 +17,7 @@ name: virt-manager-reloaded
 
 services:
   virt-manager-reloaded:
-    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.6
+    image: ghcr.io/pixer415/virt-manager-reloaded:1.0.7
     container_name: virt-manager-reloaded
     hostname: virt-manager-reloaded
     restart: unless-stopped
@@ -67,11 +67,21 @@ services:
       # libvirt builds the guest bridge and its NAT rules inside this
       # container's own network namespace.
       - NET_ADMIN
+      # Docker mounts /proc/sys read-only, and libvirt's network driver has to
+      # write to it to bring virbr0 up. NET_ADMIN creates the bridge but cannot
+      # tune it; SYS_ADMIN lets the container remount /proc/sys for itself.
+      # Drop this and guests get no networking - everything else still works.
+      - SYS_ADMIN
+
+    sysctls:
+      # Set at creation, when /proc/sys is still writable, so forwarding is
+      # already on by the time libvirt looks.
+      - net.ipv4.ip_forward=1
 
 x-casaos:
   main: virt-manager-reloaded
   id: io.github.pixer415.virt-manager-reloaded
-  version: 1.0.6
+  version: 1.0.7
   icon: https://pixer415.github.io/vmm-reloaded/apps/io.github.pixer415.virt-manager-reloaded/assets/icon.svg
   index: /
   port_map: "8185"
